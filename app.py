@@ -206,6 +206,24 @@ def main() -> None:
         platform_bank_matches,
         platform_package_report,
     )
+    pdf_bundle, pdf_error = prepare_pdf_report_bundle(
+        docs,
+        bank,
+        paypal,
+        matches,
+        links,
+        settings,
+        paypal_bank_matches,
+        document_evidence,
+        platform_transactions,
+        platform_bank_matches,
+        platform_package_report,
+        etsy_annual_report,
+        etsy_accountable_comparison,
+        leftover_candidate_report,
+    )
+    with st.expander("PDF-Reports herunterladen", expanded=True):
+        show_pdf_download_buttons(pdf_bundle, pdf_error, key_prefix="top")
 
     tabs = st.tabs(["BENÖTIGTE DATEN", "Belegketten", "FYRST-Matches", "Umsatz-Auslastung", "Plausibilität", "Plattformdaten", "Offene Belege", "Offene Bankumsätze", "Restprüfung", "PayPal-Brücke", "KI-Fallback", "Export"])
     with tabs[0]:
@@ -254,6 +272,8 @@ def main() -> None:
             leftover_candidate_report,
             bank_claim_usage,
             overall_plausibility_report,
+            pdf_bundle,
+            pdf_error,
         )
 
 
@@ -357,15 +377,20 @@ def inject_css() -> None:
         div[data-testid="stMetric"] * {
             opacity: 1 !important;
         }
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"],
+        div[data-testid="stMetric"] [data-testid="stMetricLabel"] *,
         div[data-testid="stMetricLabel"] p,
         div[data-testid="stMetricLabel"] *,
         div[data-testid="stMetricDelta"] p,
         div[data-testid="stMetricDelta"] * {
             color: var(--app-muted) !important;
+            -webkit-text-fill-color: var(--app-muted) !important;
+            fill: var(--app-muted) !important;
         }
         div[data-testid="stMetricValue"],
         div[data-testid="stMetricValue"] * {
-            color: var(--app-ink);
+            color: var(--app-ink) !important;
+            -webkit-text-fill-color: var(--app-ink) !important;
         }
         button[kind="primary"],
         button[data-testid="stBaseButton-primary"] {
@@ -1264,6 +1289,105 @@ def show_llm_fallback(open_bank: pd.DataFrame, open_docs: pd.DataFrame, settings
         st.json(st.session_state["llm_suggestions"])
 
 
+def prepare_pdf_report_bundle(
+    docs: pd.DataFrame,
+    bank: pd.DataFrame,
+    paypal: pd.DataFrame,
+    matches: pd.DataFrame,
+    links: pd.DataFrame,
+    settings: MatchSettings,
+    paypal_bank_matches: pd.DataFrame,
+    document_evidence: pd.DataFrame,
+    platform_transactions: pd.DataFrame,
+    platform_bank_matches: pd.DataFrame,
+    platform_package_report: pd.DataFrame,
+    etsy_annual_report: pd.DataFrame,
+    etsy_accountable_comparison: pd.DataFrame,
+    leftover_candidate_report: pd.DataFrame,
+) -> tuple[tuple[bytes, bytes, bytes, bytes] | None, str | None]:
+    try:
+        with st.spinner("PDF-Reports werden vorbereitet..."):
+            return (
+                build_pdf_report_bytes(
+                    docs,
+                    bank,
+                    paypal,
+                    matches,
+                    links,
+                    settings,
+                    paypal_bank_matches,
+                    document_evidence,
+                    platform_transactions,
+                    platform_bank_matches,
+                    platform_package_report,
+                    etsy_annual_report,
+                    etsy_accountable_comparison,
+                    leftover_candidate_report,
+                    st.session_state.get("manual_report_edits", {}),
+                    st.session_state.get("manual_report_summary_note", ""),
+                ),
+                None,
+            )
+    except ModuleNotFoundError as exc:
+        return None, f"PDF-Export braucht noch ein Paket: {exc.name}. Auf Railway wird es über requirements.txt installiert."
+    except Exception as exc:  # pragma: no cover - visible UI fallback for hosted runs
+        return None, f"PDF-Reports konnten nicht erzeugt werden: {exc}"
+
+
+def show_pdf_download_buttons(
+    pdf_bundle: tuple[bytes, bytes, bytes, bytes] | None,
+    pdf_error: str | None,
+    key_prefix: str,
+) -> None:
+    if pdf_error:
+        st.warning(pdf_error)
+        return
+    if pdf_bundle is None:
+        st.info("PDF-Reports sind für diesen Lauf noch nicht vorbereitet.")
+        return
+
+    beleg_pdf, kontroll_pdf, hypothesen_pdf, ledger_pdf = pdf_bundle
+    st.caption("Die PDF-Reports beziehen sich auf den aktuell angezeigten Analyse-Lauf.")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.download_button(
+        "Beleg-Report PDF",
+        beleg_pdf,
+        "buchhaltungs_buddy_beleg_report.pdf",
+        "application/pdf",
+        key=f"{key_prefix}_beleg_pdf",
+        on_click="ignore",
+        use_container_width=True,
+        type="primary",
+    )
+    c2.download_button(
+        "Kontroll-Report PDF",
+        kontroll_pdf,
+        "buchhaltungs_buddy_kontroll_report.pdf",
+        "application/pdf",
+        key=f"{key_prefix}_kontroll_pdf",
+        on_click="ignore",
+        use_container_width=True,
+    )
+    c3.download_button(
+        "Hypothesen-Report PDF",
+        hypothesen_pdf,
+        "buchhaltungs_buddy_hypothesen_report.pdf",
+        "application/pdf",
+        key=f"{key_prefix}_hypothesen_pdf",
+        on_click="ignore",
+        use_container_width=True,
+    )
+    c4.download_button(
+        "Ledger-Experiment PDF",
+        ledger_pdf,
+        "buchhaltungs_buddy_ledger_experiment_report.pdf",
+        "application/pdf",
+        key=f"{key_prefix}_ledger_pdf",
+        on_click="ignore",
+        use_container_width=True,
+    )
+
+
 def show_export(
     docs: pd.DataFrame,
     bank: pd.DataFrame,
@@ -1286,9 +1410,11 @@ def show_export(
     leftover_candidate_report: pd.DataFrame,
     bank_claim_usage: pd.DataFrame,
     overall_plausibility_report: pd.DataFrame,
+    pdf_bundle: tuple[bytes, bytes, bytes, bytes] | None = None,
+    pdf_error: str | None = None,
 ) -> None:
-    try:
-        beleg_pdf, kontroll_pdf, hypothesen_pdf, ledger_pdf = build_pdf_report_bytes(
+    if pdf_bundle is None and pdf_error is None:
+        pdf_bundle, pdf_error = prepare_pdf_report_bundle(
             docs,
             bank,
             paypal,
@@ -1303,37 +1429,8 @@ def show_export(
             etsy_annual_report,
             etsy_accountable_comparison,
             leftover_candidate_report,
-            st.session_state.get("manual_report_edits", {}),
-            st.session_state.get("manual_report_summary_note", ""),
         )
-    except ModuleNotFoundError as exc:
-        st.warning(f"PDF-Export braucht noch ein Paket: {exc.name}. Auf Railway wird es über requirements.txt installiert.")
-    else:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.download_button(
-            "Beleg-Report PDF",
-            beleg_pdf,
-            "buchhaltungs_buddy_beleg_report.pdf",
-            "application/pdf",
-        )
-        c2.download_button(
-            "Kontroll-Report PDF",
-            kontroll_pdf,
-            "buchhaltungs_buddy_kontroll_report.pdf",
-            "application/pdf",
-        )
-        c3.download_button(
-            "Hypothesen-Report PDF",
-            hypothesen_pdf,
-            "buchhaltungs_buddy_hypothesen_report.pdf",
-            "application/pdf",
-        )
-        c4.download_button(
-            "Ledger-Experiment PDF",
-            ledger_pdf,
-            "buchhaltungs_buddy_ledger_experiment_report.pdf",
-            "application/pdf",
-        )
+    show_pdf_download_buttons(pdf_bundle, pdf_error, key_prefix="export")
 
     st.download_button("matches.csv", to_csv_bytes(matches), "matches.csv", "text/csv")
     st.download_button("match_links.csv", to_csv_bytes(links), "match_links.csv", "text/csv")
