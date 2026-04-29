@@ -27,6 +27,7 @@ OUTPUT_DIR = ROOT / "outputs"
 REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_beleg_report.pdf"
 CONTROL_REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_kontroll_report.pdf"
 HYPOTHESIS_REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_hypothesen_report.pdf"
+LEDGER_EXPERIMENT_REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_ledger_experiment_report.pdf"
 
 
 def main() -> int:
@@ -60,6 +61,7 @@ def main() -> int:
     print(REPORT_PATH)
     print(CONTROL_REPORT_PATH)
     print(HYPOTHESIS_REPORT_PATH)
+    print(LEDGER_EXPERIMENT_REPORT_PATH)
     return 0
 
 
@@ -290,6 +292,7 @@ def build_pdf(
     etsy_accountable_comparison: pd.DataFrame | None = None,
     leftover_candidate_report: pd.DataFrame | None = None,
     hypothesis_candidate_report: pd.DataFrame | None = None,
+    ledger_experiment_report: pd.DataFrame | None = None,
     manual_edits: dict[str, dict[str, object]] | pd.DataFrame | None = None,
     manual_summary_note: str = "",
 ) -> None:
@@ -310,6 +313,7 @@ def build_pdf(
         hypothesis_candidate_report,
     )
     build_hypothesis_pdf(hypothesis_candidate_report, open_docs, open_bank, settlement_detail_report)
+    build_ledger_experiment_pdf(ledger_experiment_report)
 
 
 def build_beleg_pdf(
@@ -519,6 +523,53 @@ def build_hypothesis_pdf(
     story.append(Paragraph("2. Offene Belege gegen Restbeträge / offene Umsätze", styles["H1"]))
     add_hypothesis_table(story, styles, frame)
 
+    pdf.build(story, onFirstPage=footer, onLaterPages=footer)
+
+
+def build_ledger_experiment_pdf(ledger_experiment_report: pd.DataFrame | None) -> None:
+    frame = ledger_experiment_report if ledger_experiment_report is not None else pd.DataFrame()
+    pdf = SimpleDocTemplate(
+        str(LEDGER_EXPERIMENT_REPORT_PATH),
+        pagesize=landscape(A4),
+        rightMargin=0.8 * cm,
+        leftMargin=0.8 * cm,
+        topMargin=0.8 * cm,
+        bottomMargin=0.8 * cm,
+        title="Buchhaltungs Buddy Ledger-Experiment",
+    )
+    styles = get_styles()
+    story: list = []
+    story.append(Paragraph("Buchhaltungs Buddy", styles["Title"]))
+    story.append(Paragraph("Ledger-Experimentreport", styles["Subtitle"]))
+    story.append(Paragraph(f"Erstellt: {datetime.now().strftime('%d.%m.%Y %H:%M')}", styles["Small"]))
+    story.append(Spacer(1, 0.3 * cm))
+
+    story.append(Paragraph("1. Kurzfazit", styles["H1"]))
+    if frame.empty:
+        story.append(Paragraph("Keine nicht vollständig belegten Belege im Ledger-Experiment.", styles["Body"]))
+        pdf.build(story, onFirstPage=footer, onLaterPages=footer)
+        return
+
+    summary = (
+        frame.groupby("ledger_status", dropna=False)["doc_ref"]
+        .count()
+        .reset_index()
+        .rename(columns={"ledger_status": "Ledger-Status", "doc_ref": "Belege"})
+        .sort_values("Belege", ascending=False)
+    )
+    story.append(make_table([summary.columns.tolist()] + summary.astype(str).values.tolist(), [7.0 * cm, 2.0 * cm], header=True))
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(
+        Paragraph(
+            "Dieser Bericht ist ein getrenntes Experiment: offene Belege gegen Ledger-Hinweise, Restbeträge und offene Umsätze. "
+            "Die Einträge sind mögliche Kandidaten, nicht automatisch bestätigt. Er verändert keine Hauptmatches und ersetzt nicht die Belegliste im Beleg-Report.",
+            styles["Body"],
+        )
+    )
+
+    story.append(PageBreak())
+    story.append(Paragraph("2. Ledger-Sicht auf nicht vollständig belegte Belege", styles["H1"]))
+    add_ledger_experiment_table(story, styles, frame)
     pdf.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
@@ -810,6 +861,33 @@ def add_hypothesis_table(story: list, styles: dict, frame: pd.DataFrame) -> None
     headers = ["Quelle", "Beleg", "Typ", "Belegdatum", "Beleg", "Beleg-Gegenpartei", "Umsatz/Rest", "Rest/Umsatz", "Umsatz-Gegenpartei", "Diff.", "Tage", "Score", "Empfehlung"]
     widths = [2.7 * cm, 2.0 * cm, 1.3 * cm, 1.6 * cm, 1.4 * cm, 3.2 * cm, 1.7 * cm, 1.5 * cm, 3.4 * cm, 1.1 * cm, 0.9 * cm, 1.0 * cm, 4.5 * cm]
     add_table(story, styles, work.head(180), cols, headers, widths)
+
+
+def add_ledger_experiment_table(story: list, styles: dict, frame: pd.DataFrame) -> None:
+    if frame.empty:
+        story.append(Paragraph("Keine Zeilen.", styles["Body"]))
+        return
+    work = frame.copy()
+    work["doc_type"] = work["doc_type"].map({"income": "Einnahme", "expense": "Ausgabe"}).fillna(work["doc_type"]) if "doc_type" in work else ""
+    cols = [
+        "ledger_status",
+        "doc_ref",
+        "doc_type",
+        "date",
+        "amount",
+        "platform",
+        "counterparty",
+        "main_status",
+        "ledger_source",
+        "ledger_date",
+        "ledger_amount",
+        "ledger_category",
+        "bank_bridge",
+        "recommendation",
+    ]
+    headers = ["Ledger-Status", "Beleg", "Typ", "Datum", "Betrag", "Plattform", "Gegenpartei", "Hauptstatus", "Ledger", "Ledger-Datum", "Ledger-Betrag", "Kategorie", "Bank", "Empfehlung"]
+    widths = [3.0 * cm, 1.9 * cm, 1.2 * cm, 1.5 * cm, 1.2 * cm, 1.3 * cm, 2.7 * cm, 2.0 * cm, 1.8 * cm, 1.5 * cm, 1.5 * cm, 1.8 * cm, 1.0 * cm, 4.2 * cm]
+    add_table(story, styles, work, cols, headers, widths)
 
 
 def add_open_docs_table(story: list, styles: dict, frame: pd.DataFrame, title: str) -> None:

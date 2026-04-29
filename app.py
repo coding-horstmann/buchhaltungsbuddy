@@ -15,6 +15,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - startup helper
 from reconcile.evidence import build_document_evidence, build_open_bank_after_evidence
 from reconcile.annual_reports import build_etsy_accountable_comparison, build_etsy_annual_reconciliation
 from reconcile.leftovers import build_hypothesis_candidate_report, build_leftover_candidate_report
+from reconcile.ledger_experiment import build_ledger_experiment_report
 from reconcile.llm import LlmConfig, dataframe_records, suggest_match
 from reconcile.matching import (
     MatchSettings,
@@ -1287,7 +1288,7 @@ def show_export(
     overall_plausibility_report: pd.DataFrame,
 ) -> None:
     try:
-        beleg_pdf, kontroll_pdf, hypothesen_pdf = build_pdf_report_bytes(
+        beleg_pdf, kontroll_pdf, hypothesen_pdf, ledger_pdf = build_pdf_report_bytes(
             docs,
             bank,
             paypal,
@@ -1308,7 +1309,7 @@ def show_export(
     except ModuleNotFoundError as exc:
         st.warning(f"PDF-Export braucht noch ein Paket: {exc.name}. Auf Railway wird es über requirements.txt installiert.")
     else:
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         c1.download_button(
             "Beleg-Report PDF",
             beleg_pdf,
@@ -1325,6 +1326,12 @@ def show_export(
             "Hypothesen-Report PDF",
             hypothesen_pdf,
             "buchhaltungs_buddy_hypothesen_report.pdf",
+            "application/pdf",
+        )
+        c4.download_button(
+            "Ledger-Experiment PDF",
+            ledger_pdf,
+            "buchhaltungs_buddy_ledger_experiment_report.pdf",
             "application/pdf",
         )
 
@@ -1354,6 +1361,7 @@ def show_export(
         st.download_button("etsy_annual_reconciliation.csv", to_csv_bytes(etsy_annual_report), "etsy_annual_reconciliation.csv", "text/csv")
         st.download_button("etsy_accountable_comparison.csv", to_csv_bytes(etsy_accountable_comparison), "etsy_accountable_comparison.csv", "text/csv")
     st.download_button("leftover_candidate_report.csv", to_csv_bytes(leftover_candidate_report), "leftover_candidate_report.csv", "text/csv")
+    st.download_button("ledger_experiment_report.csv", to_csv_bytes(build_ledger_experiment_report(document_evidence)), "ledger_experiment_report.csv", "text/csv")
     manual_report_frame = manual_report_edits_frame()
     if not manual_report_frame.empty:
         st.download_button("manual_report_edits.csv", to_csv_bytes(manual_report_frame), "manual_report_edits.csv", "text/csv")
@@ -1432,7 +1440,7 @@ def build_pdf_report_bytes(
     leftover_candidate_report: pd.DataFrame,
     manual_report_edits: dict[str, dict[str, object]] | None = None,
     manual_report_summary_note: str = "",
-) -> tuple[bytes, bytes, bytes]:
+) -> tuple[bytes, bytes, bytes, bytes]:
     import scripts.build_explicit_match_report as report_pdf
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -1440,6 +1448,7 @@ def build_pdf_report_bytes(
         report_pdf.REPORT_PATH = temp_path / "buchhaltungs_buddy_beleg_report.pdf"
         report_pdf.CONTROL_REPORT_PATH = temp_path / "buchhaltungs_buddy_kontroll_report.pdf"
         report_pdf.HYPOTHESIS_REPORT_PATH = temp_path / "buchhaltungs_buddy_hypothesen_report.pdf"
+        report_pdf.LEDGER_EXPERIMENT_REPORT_PATH = temp_path / "buchhaltungs_buddy_ledger_experiment_report.pdf"
         open_doc_ids = set(document_evidence.loc[document_evidence["evidence_level"] == "offen", "doc_id"])
         open_docs = docs[docs["doc_id"].isin(open_doc_ids)].copy()
         open_bank = build_open_bank_after_evidence(bank, matches, paypal_bank_matches, platform_bank_matches)
@@ -1447,6 +1456,7 @@ def build_pdf_report_bytes(
         bank_report = report_pdf.build_bank_report(bank, document_evidence, matches, paypal_bank_matches, platform_bank_matches)
         settlement_detail_report = report_pdf.build_settlement_detail_report(bank_report, document_evidence)
         hypothesis_candidate_report = build_hypothesis_candidate_report(open_docs, open_bank, settlement_detail_report, settings)
+        ledger_experiment_report = build_ledger_experiment_report(document_evidence)
         report_pdf.build_pdf(
             docs,
             bank,
@@ -1462,10 +1472,16 @@ def build_pdf_report_bytes(
             etsy_accountable_comparison=etsy_accountable_comparison,
             leftover_candidate_report=leftover_candidate_report,
             hypothesis_candidate_report=hypothesis_candidate_report,
+            ledger_experiment_report=ledger_experiment_report,
             manual_edits=manual_report_edits,
             manual_summary_note=manual_report_summary_note,
         )
-        return report_pdf.REPORT_PATH.read_bytes(), report_pdf.CONTROL_REPORT_PATH.read_bytes(), report_pdf.HYPOTHESIS_REPORT_PATH.read_bytes()
+        return (
+            report_pdf.REPORT_PATH.read_bytes(),
+            report_pdf.CONTROL_REPORT_PATH.read_bytes(),
+            report_pdf.HYPOTHESIS_REPORT_PATH.read_bytes(),
+            report_pdf.LEDGER_EXPERIMENT_REPORT_PATH.read_bytes(),
+        )
 
 
 def manual_external_account_frame() -> pd.DataFrame:

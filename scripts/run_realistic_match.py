@@ -13,6 +13,7 @@ import build_explicit_match_report as report_pdf  # noqa: E402
 from reconcile.annual_reports import build_etsy_accountable_comparison, build_etsy_annual_pdf, build_etsy_annual_reconciliation  # noqa: E402
 from reconcile.evidence import build_document_evidence, build_open_bank_after_evidence  # noqa: E402
 from reconcile.leftovers import build_hypothesis_candidate_report, build_leftover_candidate_report  # noqa: E402
+from reconcile.ledger_experiment import build_ledger_experiment_report  # noqa: E402
 from reconcile.matching import MatchSettings, reconcile, text_similarity  # noqa: E402
 from reconcile.parsers import parse_accountable_file, parse_bank_file, parse_paypal_file  # noqa: E402
 from reconcile.paypal import match_docs_to_paypal, match_paypal_transfers_to_bank  # noqa: E402
@@ -160,6 +161,7 @@ def main() -> int:
     etsy_accountable_comparison = build_etsy_accountable_comparison(evidence, platform_transactions)
     leftover_candidate_report = build_leftover_candidate_report(open_docs, open_bank, settings)
     hypothesis_candidate_report = build_hypothesis_candidate_report(open_docs, open_bank, settlement_detail_report, settings)
+    ledger_experiment_report = build_ledger_experiment_report(evidence)
     alias_report = build_alias_control(docs)
     ai_doc_candidates = build_ai_doc_candidates(open_docs, open_bank)
     ai_bank_candidates = build_ai_bank_candidates(open_bank, open_docs, settings)
@@ -192,6 +194,7 @@ def main() -> int:
     write_csv(etsy_accountable_comparison, "etsy_accountable_comparison.csv")
     write_csv(leftover_candidate_report, "leftover_candidate_report.csv")
     write_csv(hypothesis_candidate_report, "hypothesis_candidate_report.csv")
+    write_csv(ledger_experiment_report, "ledger_experiment_report.csv")
     write_csv(alias_report, "alias_control.csv")
     write_csv(ai_doc_candidates, "ai_review_doc_candidates.csv")
     write_csv(ai_bank_candidates, "ai_review_bank_candidates.csv")
@@ -201,6 +204,7 @@ def main() -> int:
     report_pdf.REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_beleg_report.pdf"
     report_pdf.CONTROL_REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_kontroll_report.pdf"
     report_pdf.HYPOTHESIS_REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_hypothesen_report.pdf"
+    report_pdf.LEDGER_EXPERIMENT_REPORT_PATH = OUTPUT_DIR / "buchhaltungs_buddy_ledger_experiment_report.pdf"
     report_pdf.build_pdf(
         docs,
         bank,
@@ -216,6 +220,7 @@ def main() -> int:
         etsy_accountable_comparison=etsy_accountable_comparison,
         leftover_candidate_report=leftover_candidate_report,
         hypothesis_candidate_report=hypothesis_candidate_report,
+        ledger_experiment_report=ledger_experiment_report,
     )
     etsy_pdf_path = OUTPUT_DIR / "etsy_jahresabgleich.pdf"
     build_etsy_annual_pdf(etsy_annual_report, etsy_pdf_path)
@@ -248,9 +253,11 @@ def main() -> int:
         "bank_hard_over_claim": int((bank_claim_usage["usage_status"] == "over_claim").sum()) if not bank_claim_usage.empty else 0,
         "leftover_candidates": len(leftover_candidate_report),
         "hypothesis_candidates": len(hypothesis_candidate_report),
+        "ledger_experiment_rows": len(ledger_experiment_report),
         "beleg_report_pdf": str(report_pdf.REPORT_PATH),
         "kontroll_report_pdf": str(report_pdf.CONTROL_REPORT_PATH),
         "hypothesen_report_pdf": str(report_pdf.HYPOTHESIS_REPORT_PATH),
+        "ledger_experiment_pdf": str(report_pdf.LEDGER_EXPERIMENT_REPORT_PATH),
         "etsy_annual_pdf": str(etsy_pdf_path),
         "overall_plausibility_pdf": str(plausibility_pdf_path),
     }
